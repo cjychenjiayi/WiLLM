@@ -1,92 +1,81 @@
-# A Dataset for Wi-Fi-based Human Activity Recognition (Baha Dataset)
+# Baha
 
-This folder provides a PyTorch dataloader and preprocessing script for the **Baha** dataset (Wi-Fi-based Human Activity Recognition in LOS and NLOS Indoor Environments). We do **not** provide the raw data; please download it from the official source.
+Preprocessing and PyTorch loading utilities for WiFi human activity recognition in line-of-sight (LOS) and non-line-of-sight (NLOS) indoor environments.
 
-## 1. Download Raw Data
+[All datasets](../../DATASETS.md) · [Loader source](Baha_dataloader.py) · [Preprocessing source](Baha_preprocess.py)
 
-The dataset was proposed in the paper:
-> **"A dataset for Wi-Fi-based human activity recognition in line-of-sight and non-line-of-sight indoor environments"**  
-> Baha’ A. Alsaify, Mahmoud M. Almazari, Rami Alazrai, Mohammad I. Daoud.  
-> *Data in Brief*, Volume 33, 2020.
+## Obtain and organize the data
 
-You can download the raw `.mat` files from the official repository:
-*   **Official Repository**: [https://github.com/lcsig/Dataset-for-Wi-Fi-based-human-activity-recognition-in-LOS-and-NLOS-indoor-environments](https://github.com/lcsig/Dataset-for-Wi-Fi-based-human-activity-recognition-in-LOS-and-NLOS-indoor-environments)
-*   **Mendeley Data**: [https://data.mendeley.com/datasets/v38wjmz6f6/1](https://data.mendeley.com/datasets/v38wjmz6f6/1)
+Use the [original dataset repository](https://github.com/lcsig/Dataset-for-Wi-Fi-based-human-activity-recognition-in-LOS-and-NLOS-indoor-environments) or its [Mendeley Data record](https://data.mendeley.com/datasets/v38wjmz6f6/1).
 
-Please place the downloaded `MAT` folder (containing subfolders `E1`, `E2`, `E3`) into the following directory structure:
+The preprocessing function expects a directory containing `E1`, `E2`, and `E3`:
 
-```
+```text
 wifi_data/
 └── Baha/
-    └── Dataset-for-Wi-Fi-based-human-activity-recognition-in-LOS-and-NLOS-indoor-environments/
-        └── MAT/
-            ├── E1/
-            │   ├── E1_S01_C01_A01_T01.mat
-            │   └── ...
-            ├── E2/
-            └── E3/
+    ├── MAT/
+    │   ├── E1/E1_S01_C01_A01_T01.mat
+    │   ├── E2/...
+    │   └── E3/...
+    └── baha_processed/          # Generated output
 ```
 
-*(Note: The exact path can be configured in the preprocessing script if your structure differs.)*
+If the downloaded archive contains another parent directory, pass the actual `MAT` directory to the preprocessing function.
 
-## 2. Preprocessing
+## Preprocess
 
-The raw `.mat` files need to be processed to extract CSI amplitude, normalize, and organize into a unified PyTorch-friendly format. We provide a script to do this automatically using **multiprocessing** for efficiency.
-
-Run the preprocessing script:
-
-```bash
-python datas/dataloaders/Baha/Baha_preprocess.py
-```
-
-This script will:
-1.  Read all `.mat` files from the specified source directory.
-2.  Extract CSI data, compute amplitude (in dB), and handle packet alignment.
-3.  Compute global mean and variance for normalization.
-4.  Save the processed data (data list, mean, variance) to `wifi_data/baha_processed/`.
-
-## 3. Usage
-
-After preprocessing, you can use the dataloader in your project:
+The script's `__main__` block contains machine-specific paths. To use your paths without editing the source, run the following from a Python script saved at the repository root:
 
 ```python
-from datas.dataloaders.Baha.Baha_dataloader import Baha_dataloader
+import sys
+from pathlib import Path
 
-# Create train and test loaders
-# By default, loads from wifi_data/baha_processed
+# The preprocessing module imports Baha_utils as a sibling module.
+sys.path.insert(0, str(Path("dataloaders/Baha").resolve()))
+from Baha_preprocess import preprocess_data, set_seed
+
+if __name__ == "__main__":
+    set_seed(42)
+    preprocess_data(
+        root_path="wifi_data/Baha/MAT",
+        save_dir="wifi_data/Baha/baha_processed",
+        require_align=True,
+    )
+```
+
+The pipeline extracts CSI amplitude in dB, retains recordings longer than 900 time steps, and truncates them to the shortest retained sequence when alignment is enabled. Class IDs are based on the observed `(C, A)` pairs in the filenames.
+
+It writes:
+
+- `data_list.pth`: processed sample records with data and labels.
+- `class_mapping.pth`: the mapping from `(C, A)` pairs to prepared class IDs.
+- `mean.pth` and `variance.pth`: statistics across samples at each channel and time position.
+
+The alignment length depends on the input recordings. A length of 901 is wrapper metadata, not a guaranteed preprocessing output.
+
+## Load a batch
+
+```python
+from dataloaders.Baha.Baha_dataloader import Baha_dataloader
+
 train_loader, test_loader = Baha_dataloader(
-    data_path="wifi_data/baha_processed",
+    data_path="wifi_data/Baha/baha_processed",
     batch_size=32,
-    crop_size=None  # Optional: crop/resize time dimension
+    crop_size=100,
+    num_workers=0,
 )
 
-for x, y in train_loader:
-    print(f"Data shape: {x.shape}")   # Expected: (Batch, 90, Time)
-    print(f"Label shape: {y.shape}")  # One-hot encoded labels
+x, y = next(iter(train_loader))
+print(x.shape)  # [batch, 90, 100] when the aligned sequence is longer than 100
+print(y.shape)  # [batch, number_of_observed_classes]
 ```
 
-## 4. Dataset Details
+The standalone loader returns two loaders and remaps the prepared labels to one-hot vectors. Its default split is 80/20 with seed 42. It applies the saved normalization statistics before optional uniform temporal subsampling. The statistics are prepared from all retained samples before splitting.
 
-*   **Activities**: 6 main activities (Sitting, Walking, Moving, Rotating, etc.) or 12 fine-grained actions depending on mapping.
-*   **Subjects**: 30 volunteers.
-*   **Environments**: 3 different indoor environments (E1, E2, E3).
-*   **Data Format**: CSI Amplitude (Magnitude) in dB.
+The registry key is `Baha`. Its wrapper declares `[90, 901, 15]`; inspect the batch and class mapping when using a different subset or a non-default crop size.
 
-## Citation
+## Source and citation
 
-If you use this dataset, please cite the original paper:
+> Baha' A. Alsaify, Mahmoud M. Almazari, Rami Alazrai, and Mohammad I. Daoud. *A dataset for Wi-Fi-based human activity recognition in line-of-sight and non-line-of-sight indoor environments*. Data in Brief, 33, 106534, 2020. [DOI](https://doi.org/10.1016/j.dib.2020.106534).
 
-```bibtex
-@article{alsaify2020dataset,
-  title={A dataset for Wi-Fi-based human activity recognition in line-of-sight and non-line-of-sight indoor environments},
-  author={Alsaify, Baha’ A and Almazari, Mahmoud M and Alazrai, Rami and Daoud, Mohammad I},
-  journal={Data in Brief},
-  volume={33},
-  pages={106534},
-  year={2020},
-  publisher={Elsevier}
-}
-```
-
----
-*Note: This repository only provides the data loading and preprocessing utilities for PyTorch. All rights to the dataset belong to the original authors.*
+Dataset attribution and access terms are available from the [original repository](https://github.com/lcsig/Dataset-for-Wi-Fi-based-human-activity-recognition-in-LOS-and-NLOS-indoor-environments).

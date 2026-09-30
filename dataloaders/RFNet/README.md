@@ -1,70 +1,57 @@
-# RF-Net: A Unified Meta-Learning Framework for RF-based One-shot Human Activity Recognition
+# RF-Net
 
-This folder contains the **integrated** PyTorch dataloader for the **RF-Net** dataset. This work is based on the original implementation provided in the [RFNet repository](https://github.com/di0002ya/RFNet). Our contribution mainly focuses on integrating this dataset into the **csi-llm** framework for unified training and evaluation.
+A PyTorch adapter for the prepared RF-Net 100-scenario tensors used for human activity recognition.
 
-We do **not** provide the raw data; please download it from the official source or use the provided links.
+[All datasets](../../DATASETS.md) · [Loader source](RFNet_loader.py)
 
-## 1. Download Raw Data
+## Obtain and organize the data
 
-The RF-Net dataset (specifically the 100 scenarios dataset used here) is associated with the paper:
-> **"RF-Net: A Unified Meta-Learning Framework for RF-based One-shot Human Activity Recognition"**  
-> Shuya Ding, Zhe Chen, Tianyue Zheng, Jun Luo.  
-> *Proceedings of the 19th ACM Conference on Embedded Networked Sensor Systems (SenSys)*, 2021.
+Start with the [original RF-Net repository](https://github.com/di0002ya/RFNet) for data access and preparation. This adapter expects these prepared files:
 
-Resources:
-*   **Paper**: [https://arxiv.org/pdf/2111.04566](https://arxiv.org/pdf/2111.04566)
-*   **Official Repository**: [https://github.com/di0002ya/RFNet](https://github.com/di0002ya/RFNet)
-
-Please place the dataset files (`X_100_scenarios.pth`, `Y_100_scenarios.pth`) into the following directory structure:
-
-```
+```text
 wifi_data/
 └── RF-Net/
     ├── X_100_scenarios.pth
     └── Y_100_scenarios.pth
 ```
 
-## 2. Data Details
+`X_100_scenarios.pth` is expected to contain a tensor with axes described by the loader as `[scenarios, classes, shots, time, channels]`. `Y_100_scenarios.pth` supplies one-hot labels. The wrapper metadata assumes 60 channels, 512 time steps, and 6 classes.
 
-The dataset contains CSI data for 6 human activities collected in 100 different scenarios.
+## Load a batch
 
-*   **Classes (6)**: `wiping`, `walking`, `moving`, `rotating`, `sitting`, `standing up`
-*   **Input Shape**: `(Channels: 60, Time: 512)`
-*   **Format**: The raw `.pth` files contain tensors of shape `(n_scenes, n_classes, shots_per_class, time, channel)`. The dataloader reshapes this to `(N_samples, 60, 512)`.
-
-## 3. Usage
-
-You can use the dataloader in your project as follows:
+`load_rfnet` returns two **datasets**, so wrap them in PyTorch DataLoaders:
 
 ```python
-from datas.dataloaders.RFNet.RFNet_loader import load_rfnet
+from torch.utils.data import DataLoader
+from dataloaders.RFNet.RFNet_loader import load_rfnet
 
-# Create train and test datasets
-# By default, it loads from wifi_data/RF-Net
-train_dataset, val_dataset = load_rfnet(
-    data_path="wifi_data/RF-Net", 
-    test_ratio=0.2, 
-    seed=42
+train_dataset, test_dataset = load_rfnet(
+    data_path="wifi_data/RF-Net",
+    test_ratio=0.2,
+    normalize=True,
+    crop_size=100,
 )
 
-# Access a sample
-x, y = train_dataset[0]
-print(f"Data shape: {x.shape}")  # Expected: (60, 512)
-print(f"Label: {y}")            # Expected: One-hot vector, e.g., [0, 0, 1, 0, 0, 0]
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+x, y = next(iter(train_loader))
+print(x.shape)  # [batch, 60, 100] for the expected prepared tensors
+print(y.shape)  # [batch, 6]
 ```
 
-## 4. References
+Run this example from the repository root. The registry key is `RFNet`.
 
-This work is based on [RF-Net: A Unified Meta-Learning Framework for RF-based One-shot Human Activity Recognition](https://dl.acm.org/doi/10.1145/3485730.3485946).
+## Processing and split behavior
 
-If you find this dataset or code useful, please cite the original paper:
+The checked-in loader reshapes the input to `[samples, channels, time]`, computes a global mean and standard deviation, then creates a random sample split. Its default test fraction is 0.2. It fixes the random seed to 42 internally, including when another `seed` argument is supplied.
 
-```bibtex
-@inproceedings{ding2021rf,
-  title={Rf-net: A unified meta-learning framework for rf-based one-shot human activity recognition},
-  author={Ding, Shuya and Chen, Zhe and Zheng, Tianyue and Luo, Jun},
-  booktitle={Proceedings of the 19th ACM Conference on Embedded Networked Sensor Systems},
-  pages={217--230},
-  year={2021}
-}
-```
+`crop_size=None` keeps the prepared sequence length. A smaller crop size selects evenly spaced time indices. Labels are returned as stored in the prepared label tensor.
+
+The sample split mixes the flattened scenarios; it is not a held-out-scenario evaluation. The normalization statistics are computed before splitting. Also, the input axis conversion uses `reshape`, not a transpose; verify that your prepared tensor ordering matches the representation you intend to use.
+
+## Source and citation
+
+Please cite the original RF-Net work when using the dataset:
+
+> Shuya Ding, Zhe Chen, Tianyue Zheng, and Jun Luo. *RF-Net: A Unified Meta-Learning Framework for RF-enabled One-Shot Human Activity Recognition*. SenSys, 2021. [Project](https://github.com/di0002ya/RFNet) · [Paper](https://arxiv.org/abs/2111.04566).

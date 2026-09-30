@@ -1,79 +1,66 @@
-# Brinkle (Jeroen Klein Brinke's CSI Dataset)
+# Brinkle
 
-This directory provides a PyTorch dataloader and preprocessing script for the dataset created by **Jeroen Klein Brinke** at the University of Twente (Pervasive Systems).
+A standalone preprocessing pipeline and PyTorch loader for CSI activity recordings. The directory retains the name `Brinkle` used in the experiment code.
 
-## 1. Original Paper & Dataset
-The dataset originates from the following work:
+[All datasets](../../DATASETS.md) · [Loader source](Brinkle_dataloader.py) · [Preprocessing source](Brinkle_preprocess.py)
 
-> **Comparison of channel state information-based indoor localization with different input representations**  
-> *Jeroen Klein Brinke, Nirvana Meratnia.*  
-> Proceedings of the 2nd Workshop on Data Acquisition To Analysis (DATA '19), November 2019.  
-> [ACM Digital Library](https://dl.acm.org/doi/10.1145/3359427.3361913)
+## Data source and input format
 
-It is also part of his thesis work:
-> **"Interwoven Waves: Enhancing the Scalability and Robustness of Wi-Fi Channel State Information for Human Activity Recognition"**  
-> *Jeroen Klein Brinke, University of Twente, 2019/2024.*
+The University of Twente hosts Jeroen Klein Brinke's [Channel state information (WiFi traces) for 6 activities](https://research.utwente.nl/en/datasets/channel-state-information-wifi-traces-for-6-activities/). Use the dataset record for download access and attribution.
 
-### Dataset Details
-*   **Activities (6 types):** `clapping`, `waving`, `falling`, `walking`, `jumping`, `nothing`
-*   **Format:** The raw data consists of `.mat` files containing CSI traces recorded using the Linux 802.11n CSI Tool (Intel 5300 NIC).
+This adapter expects `.mat` files containing a `csi_trace` structure whose frames have a `csi` field. It derives activity names from the second underscore-separated component of each filename:
 
-## 2. Directory Structure
-Please ensure your raw data is placed in the following structure (reflecting how the preprocessing script expects it):
-
-```
+```text
 wifi_data/
 └── Brinkle/
     ├── 1_clapping_1.mat
     ├── 1_waving_2.mat
-    └── ... (flat list of .mat files is supported by the script)
+    └── ...
 ```
 
-> **Note:** The original dataset might be organized into subfolders like `day_1/`, `day_2/`, etc. Our script recursively scans for `.mat` files, so subfolders are fine, but the filenames must contain the activity (e.g., `1_clapping_1.mat`).
+Nested folders are also scanned. The actual class vocabulary is derived from accepted filenames rather than a hardcoded activity list.
 
-## 3. Preprocessing
+## Preprocess
 
-Before training, you must run the preprocessing script to parse the `.mat` files, interpolate missing CSI data, and save the dataset into a single `dataset.pkl` file.
-
-### Run Preprocessing
+From the repository root:
 
 ```bash
-# Activate your environment
-conda activate willm
-
-# Run the preprocessing script
-python datas/dataloaders/Brinkle/Brinkle_preprocess.py --root_path /home/chenjiayi/workspace/willm/wifi_data/Brinkle --workers 16
+python dataloaders/Brinkle/Brinkle_preprocess.py \
+    --root_path wifi_data/Brinkle \
+    --output dataset.pkl \
+    --workers 4
 ```
 
-**Workflow:**
-1.  **Scanning:** Recursively finds all `.mat` files.
-2.  **Parsing:** robustness improvements allow handling nested struct arrays common in this dataset.
-3.  **Interpolation:** Missing CSI packets are interpolated.
-4.  **Filtering:** Samples with length outside `[92, 110)` are discarded; valid samples are truncated to **92** time steps.
-5.  **Saving:** Output saved to `dataset.pkl`.
+The script extracts CSI magnitude, aligns compatible antenna/subcarrier shapes, and interpolates missing values where possible. It retains recordings with lengths in `[92, 110)` and truncates them to 92 time steps. Files that fail parsing or filtering are skipped.
 
-## 4. Usage
+The output `wifi_data/Brinkle/dataset.pkl` contains `data_list` and `label_dict`. Review the printed valid-sample count and class dictionary before training.
 
-Use the provided `Brinkle_dataloader` in your PyTorch training script:
+## Load a batch
 
 ```python
-from datas.dataloaders.Brinkle.Brinkle_dataloader import Brinkle_dataloader
+from dataloaders.Brinkle.Brinkle_dataloader import Brinkle_dataloader
 
-# Load dataset (returns train and test loaders by default with 80/20 split)
 train_loader, test_loader = Brinkle_dataloader(
-    root_path="/home/chenjiayi/workspace/willm/wifi_data/Brinkle",
+    root_path="wifi_data/Brinkle",
     batch_size=32,
-    split_ratio=0.8
+    split_ratio=0.8,
+    num_workers=0,
 )
 
-# Example iteration
-for batch_idx, (data, label) in enumerate(train_loader):
-    # data shape: (Batch, 92, 270) -> Time x Features (3*3*30 flattened)
-    print(f"Batch {batch_idx}: Data {data.shape}, Label {label.shape}")
+x, y = next(iter(train_loader))
+print(x.shape)  # [batch, 92, features], time first
+print(y.shape)  # [batch, num_classes], one-hot labels
+
+# Convert to channels first if required by your model.
+x_channels_first = x.transpose(1, 2)
 ```
 
-### Dataloader Arguments
-*   `root_path`: Path to the directory containing `dataset.pkl`.
-*   `batch_size`: Batch size (default: 32).
-*   `split_ratio`: Ratio for train/test split (default: 0.8). If `None` or `1.0`, returns a single dataloader.
-*   `num_workers`: Number of subprocesses for data loading.
+Spatial dimensions are flattened per time step: a `[92, 3, 3, 30]` recording becomes `[92, 270]`. The feature count depends on the source recording. All samples in a batch must have matching feature dimensions.
+
+The default split is 80/20 using seed 42. With `split_ratio=None` or `split_ratio>=1`, the function returns a **single** DataLoader instead of a pair. There is no additional normalization in the loader.
+
+Brinkle is not registered in the root `dataloader.py`; use this module directly.
+
+## Source and citation
+
+Please use the citation associated with the [University of Twente dataset record](https://research.utwente.nl/en/datasets/channel-state-information-wifi-traces-for-6-activities/) and its linked publication, *Dataset: Channel State Information for Different Activities, Participants and Days*, by Jeroen Klein Brinke and Nirvana Meratnia, 2019.

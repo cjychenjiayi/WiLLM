@@ -1,68 +1,60 @@
-# NTU-Fi: NTU Human Activity Recognition & Human ID Dataset
+# NTU-Fi HAR and HumanID
 
-This folder contains the dataloader for the **NTU-Fi** datasets, including **NTU-HAR** (Activity Recognition) and **NTU-HumanID** (Authentication).
+PyTorch loaders for the prepared NTU-Fi amplitude datasets: human activity recognition (`NTUHAR`) and human identification (`NTUHumanID`).
 
-## 1. Dataset Information
+[All datasets](../../DATASETS.md) · [Loader source](NTU_dataloader.py)
 
-The data was collected at **Nanyang Technological University (NTU)**.
+## Obtain and organize the data
 
-### NTU_HAR (Human Activity Recognition)
-*   **Classes (6)**: `boxing`, `circular motion`, `clean`, `fall`, `run`, `walk`.
-*   **Input Shape**: `[Batch, 114, 100]` (Default cropped size) or `[Batch, 114, 500/Full]`
-    *   **Subcarriers x Antennas**: 114 (3 transmitting * 3 receiving * 114 subcarriers? Actually 114 is often 3x3x50?? Or specific to their setup. In code it is 114 channels).
-    *   **Time**: Variable, cropped to `100` by default.
+Download the processed datasets linked in the [SenseFi repository](https://github.com/xyanchen/WiFi-CSI-Sensing-Benchmark#run). Keep the train/test split and the class subdirectories:
 
-### NTU_HumanID
-*   **Classes (14)**: 14 distinct subjects.
-*   **Input Shape**: Same as HAR.
-
-## 2. Directory Structure
-
-```
+```text
 wifi_data/
 ├── NTU-Fi_HAR/
-│   ├── train_amp/  (.mat files)
-│   └── test_amp/   (.mat files)
+│   ├── train_amp/<class_name>/*.mat
+│   └── test_amp/<class_name>/*.mat
 └── NTU-Fi-HumanID/
-    ├── train_amp/  (.mat files)
-    └── test_amp/   (.mat files)
+    ├── train_amp/<class_name>/*.mat
+    └── test_amp/<class_name>/*.mat
 ```
 
-## 3. Usage
+Each `.mat` sample must contain a `CSIamp` array. The loader reads files one class directory below `train_amp` or `test_amp`; files placed directly in those directories will not be discovered.
+
+## Load a batch
+
+Run from the repository root:
 
 ```python
-from datas.dataloaders.NTU_Datasets.NTU_dataloader import get_NTUHAR, get_NTUHumanID
+from dataloaders.NTU_Datasets.NTU_dataloader import get_NTUHAR, get_NTUHumanID
 
-# Load HAR
-train_loader, test_loader, name, params = get_NTUHAR(root='path/to/wifi_data', batch_size=64, crop_size=100)
+train_loader, test_loader, name, params = get_NTUHAR(
+    root="wifi_data", batch_size=32, crop_size=100,
+)
 
-# Load HumanID
-train_loader, test_loader, name, params = get_NTUHumanID(root='path/to/wifi_data', batch_size=64, crop_size=100)
+x, y = next(iter(train_loader))
+print(name, params)  # NTU_HAR [114, 100, 6]
+print(x.shape)       # [batch, 114, 100]
+print(y.shape)       # [batch, 6]
+
+id_train, id_test, id_name, id_params = get_NTUHumanID(
+    root="wifi_data", batch_size=32, crop_size=100,
+)
 ```
 
-## 4. Reference
-These datasets are part of the **SenseFi** benchmark and associated works. Please cite the relevant papers:
+Both functions return four values: `train_loader, test_loader, name, params`. Their direct-call default is `crop_size=100`. Pass `None` to keep the sequence after the built-in temporal subsampling.
 
-**Benchmark Paper:**
-> **"SenseFi: A Library and Benchmark on Deep-Learning-Empowered WiFi Human Sensing"**
-> Jianfei Yang, Xinyan Chen, Dazhuo Wang, Han Zou, Chris Xiaoxuan Lu, Sumei Sun, Lihua Xie.
-> *Patterns*, 2023.
+## Processing and labels
 
-**NTU-HAR Source:**
-> **"EfficientFi: Towards Large-Scale Lightweight WiFi Sensing via CSI Compression"**
-> *IEEE Internet of Things Journal*, 2022.
+- The loader normalizes with fixed constants: `(CSIamp - 42.3199) / 4.9802`.
+- It selects the first 114 rows and every eighth time step, then reshapes to `[114, T]`.
+- If `T > crop_size`, it selects evenly spaced time indices. It does not pad shorter samples.
+- Labels are floating-point one-hot vectors. The wrapper declares 6 HAR classes and 14 HumanID classes; the actual label mapping is built from the class folders.
+- Train and test mappings are constructed separately using filesystem glob order. Check that `train_loader.dataset.category == test_loader.dataset.category` before training or evaluating.
 
-**NTU-HumanID Source:**
-> **"CAUTION: A Robust WiFi-based Human Authentication System via Few-shot Open-set Gait Recognition"**
-> *IEEE Internet of Things Journal*, 2022.
+The uncropped wrapper metadata is `[114, 250, K]`; inspect the actual sample shape when using a different prepared release.
 
-*   **Paper Link**: [SenseFi (arXiv)](https://arxiv.org/abs/2207.07859)
-*   **Official Repository**: [xyanchen/WiFi-CSI-Sensing-Benchmark](https://github.com/xyanchen/WiFi-CSI-Sensing-Benchmark)
+## Source and citation
 
-## 5. Download Instructions
+The [SenseFi project](https://github.com/xyanchen/WiFi-CSI-Sensing-Benchmark) provides the processed data links and benchmark context. Cite the datasets' original work as specified there and the benchmark when using its prepared resources:
 
-The dataset can be downloaded from the **SenseFi** repository or its associated links.
-*   **GitHub**: [xyanchen/WiFi-CSI-Sensing-Benchmark](https://github.com/xyanchen/WiFi-CSI-Sensing-Benchmark)
-*   **Direct Download**: Check the "Datasets" section in the SenseFi README for Google Drive/Baidu Netdisk links.
-
-After downloading, extract the `.mat` files and organize them into `train_amp` and `test_amp` folders as shown in Section 2.
+> Jianfei Yang et al. *SenseFi: A Library and Benchmark on Deep-Learning-Empowered WiFi Human Sensing*. Patterns, 2023. [Paper](https://arxiv.org/abs/2207.07859).

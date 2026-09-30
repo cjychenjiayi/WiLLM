@@ -1,44 +1,43 @@
-数据集与数据加载器
-=================
+# WiFi CSI data loaders
 
-概述
----
-本目录包含各个数据集的加载器（dataloader）与预处理脚本，方便在模型训练/评估时直接调用。
+This directory contains dataset-specific PyTorch loaders and preprocessing utilities. Start with the guide for the dataset you want to use, then import that module directly from the repository root.
 
-可用数据集（子目录）
----
-- RFNet: RFNet_loader.py（路径：dataloaders/RFNet）
-- Brinkle: Brinkle_dataloader.py / Brinkle_preprocess.py（路径：dataloaders/Brinkle）
-- SignFi: SignFi_dataloader.py / SignFi_preprocess.py（路径：dataloaders/SignFi）
-- UT_HAR: UT_HAR_dataloader.py（路径：dataloaders/UT_HAR）
-- Baha: Baha_dataloader.py（路径：dataloaders/Baha）
-- NTU_Datasets: NTU_dataloader.py（路径：dataloaders/NTU_Datasets）
-- AI_RAN_Datasets:（路径：dataloaders/AI_RAN_Datasets）
-- XRF55_repo: xrf55_dataloader.py 与说明文件（路径：dataloaders/XRF55_repo）
-- WiMANS: 见子目录（路径：dataloaders/WiMANS）
+[Project overview](../README.md) · [Dataset catalog and API notes](../DATASETS.md)
 
-说明与使用
----
-- 每个子目录内通常包含一个主 dataloader（以 *_dataloader.py 或 *_loader.py 命名）和可能的预处理脚本。
-- 在训练代码中直接 import 对应模块并构造 Dataset/Loader 即可。例如（示例代码仅供参考）：
+## Choose a dataset
+
+| Directory | Loader | Preprocessing | Guide |
+| --- | --- | --- | --- |
+| `RFNet` | [RFNet_loader.py](RFNet/RFNet_loader.py) | Uses prepared `.pth` tensors | [RF-Net](RFNet/README.md) |
+| `NTU_Datasets` | [NTU_dataloader.py](NTU_Datasets/NTU_dataloader.py) | Uses prepared `CSIamp` files | [NTU-Fi HAR and HumanID](NTU_Datasets/README.md) |
+| `UT_HAR` | [UT_HAR_dataloader.py](UT_HAR/UT_HAR_dataloader.py) | Uses prepared arrays | [UT-HAR](UT_HAR/README.md) |
+| `SignFi` | [SignFi_dataloader.py](SignFi/SignFi_dataloader.py) | [SignFi_preprocess.py](SignFi/SignFi_preprocess.py) | [SignFi](SignFi/README.md) |
+| `Baha` | [Baha_dataloader.py](Baha/Baha_dataloader.py) | [Baha_preprocess.py](Baha/Baha_preprocess.py) | [Baha](Baha/README.md) |
+| `XRF55_repo` | [XRF55_packed_dataloader.py](XRF55_repo/XRF55_packed_dataloader.py) | [XRF55_packed_preprocess.py](XRF55_repo/XRF55_packed_preprocess.py) | [XRF55 WiFi](XRF55_repo/README.md) |
+| `Brinkle` | [Brinkle_dataloader.py](Brinkle/Brinkle_dataloader.py) | [Brinkle_preprocess.py](Brinkle/Brinkle_preprocess.py) | [Brinkle](Brinkle/README.md) |
+| `AI_RAN_Datasets` | [AI_RAN_dataloader.py](AI_RAN_Datasets/AI_RAN_dataloader.py) | Expects local prepared `.npy` files | [WiCount, WiFall, and WiGesture](AI_RAN_Datasets/README.md) |
+
+## Example
+
+After preparing SignFi as described in its guide:
 
 ```python
-from dataloaders.SignFi.SignFi_dataloader import SignFiDataset
-dataset = SignFiDataset(root='/path/to/SignFi', split='train')
-from torch.utils.data import DataLoader
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=4)
+from dataloaders.SignFi.SignFi_dataloader import signfi_dataloader
+
+train_loader, test_loader, num_classes = signfi_dataloader(
+    folder_path="wifi_data/SignFi",
+    batch_size=32,
+    crop_size=None,
+)
+
+csi, labels = next(iter(train_loader))
+print(csi.shape, labels.shape, num_classes)
 ```
 
-- 若子目录内有 README.md（如 RFNet、Brinkle、UT_HAR、SignFi、Baha 等），请优先阅读子目录说明，里面通常包含数据下载、解压及预处理的详细步骤。
+Each adapter has its own return signature and tensor convention. See the [API table](../DATASETS.md#dataset-specific-entry-points) before substituting one loader for another.
 
-常见文件
----
-- `*_dataloader.py` / `*_loader.py`: 构造 Dataset 类并实现 __len__/__getitem__。
-- `*_preprocess.py`: 原始数据到训练格式的预处理脚本。
-- `README.md`（子目录）: 数据来源、格式与下载说明。
+## Public repository scope
 
-如果需要
----
-- 我可以：
-  - 为某个具体数据集补充更详细的 README（包含下载链接与示例命令）。
-  - 将示例改写为不依赖 PyTorch 的通用加载示例。
+Brinkle is a standalone adapter and is not registered in the root `dataloader.py`. Widar3's implementation is not distributed, although its import and registry entry remain in the root module. WiMANS is not included in this public tree. The guides above cover the loader directories that are actually present.
+
+Dataset downloads and citations are linked from each guide. Local raw data and generated caches should be stored in your chosen data directory.
